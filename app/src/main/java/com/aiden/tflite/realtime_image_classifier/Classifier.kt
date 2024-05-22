@@ -20,6 +20,8 @@ import org.tensorflow.lite.support.model.Model
 import org.tensorflow.lite.support.tensorbuffer.TensorBuffer
 import java.nio.ByteOrder
 
+data class Box(val left: Float, val top: Float, val right: Float, val bottom: Float, val score: Float, val label: String)
+
 class Classifier(private var context: Context, private val modelName: String) {
     private lateinit var model: Model
     private lateinit var inputImage: TensorImage
@@ -153,17 +155,19 @@ class Classifier(private var context: Context, private val modelName: String) {
         val outputArray = outputBuffer.floatArray
 
         // Assuming the output format is [batch_size, num_detections, 4 + num_classes]
-        val numDetections = outputArray.size / (4 + 1)  // Adjust according to model output format
+        val numDetections = outputArray.size / 6  // Adjust according to model output format
 
         for (i in 0 until numDetections) {
-            val startIdx = i * (4 + 1)
+            val startIdx = i * 6
             val score = outputArray[startIdx + 4]
             if (score > detectionThreshold) {
                 val left = outputArray[startIdx]
                 val top = outputArray[startIdx + 1]
                 val right = outputArray[startIdx + 2]
                 val bottom = outputArray[startIdx + 3]
-                detections.add(Box(left, top, right, bottom, score))
+                val classId = outputArray[startIdx + 5].toInt()
+                val label = if (classId < labels.size) labels[classId] else "Unknown"
+                detections.add(Box(left, top, right, bottom, score, label))
             }
         }
 
@@ -184,5 +188,3 @@ class Classifier(private var context: Context, private val modelName: String) {
         const val LABEL_FILE = "ssd_mobilenet_labels.txt"
     }
 }
-
-data class Box(val left: Float, val top: Float, val right: Float, val bottom: Float, val score: Float)

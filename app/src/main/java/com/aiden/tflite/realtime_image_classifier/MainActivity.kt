@@ -183,7 +183,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     val maxOutputSize = 5
                     val resultText = output.take(maxOutputSize).joinToString("\n") { box ->
-                        "Box: (${box.left}, ${box.top}, ${box.right}, ${box.bottom})"
+                        "Box: (${box.left}, ${box.top}, ${box.right}, ${box.bottom}), Label: ${box.label}, Score: ${box.score}"
                     }
                     binding.textResult.text = String.format(
                         Locale.ENGLISH,
