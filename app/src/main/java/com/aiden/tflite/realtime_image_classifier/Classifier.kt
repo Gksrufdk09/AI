@@ -104,7 +104,7 @@ class Classifier(private var context: Context, private val modelName: String) {
     private fun initModelShape() {
         val inputTensor = model.getInputTensor(0)
         val inputShape = inputTensor.shape()
-        modelInputChannel = inputShape[0]
+        modelInputChannel = inputShape[3]
         modelInputWidth = inputShape[1]
         modelInputHeight = inputShape[2]
 
@@ -114,17 +114,16 @@ class Classifier(private var context: Context, private val modelName: String) {
         outputBuffer = TensorBuffer.createFixedSize(outputTensor.shape(), outputTensor.dataType())
     }
 
-    fun classify(image: Bitmap, sensorOrientation: Int): Pair<String, Float> {
+    fun classify(image: Bitmap, sensorOrientation: Int): List<Box> {
         inputImage = loadImage(image, sensorOrientation)
         val inputs = arrayOf<Any>(inputImage.buffer)
         val outputs = mutableMapOf<Int, Any>()
         outputs[0] = outputBuffer.buffer.rewind()
         model.run(inputs, outputs)
-        val output = TensorLabel(labels, outputBuffer).mapWithFloatValue
-        return argmax(output)
+        return processOutput(outputBuffer)
     }
 
-    fun classify(image: Bitmap) = classify(image, 0)
+    fun classify(image: Bitmap): List<Box> = classify(image, 0)
 
     private fun loadImage(bitmap: Bitmap, sensorOrientation: Int): TensorImage {
         if (bitmap.config != Bitmap.Config.ARGB_8888) {
@@ -140,7 +139,7 @@ class Classifier(private var context: Context, private val modelName: String) {
             .add(ResizeWithCropOrPadOp(cropSize, cropSize))
             .add(ResizeOp(modelInputWidth, modelInputHeight, ResizeOp.ResizeMethod.NEAREST_NEIGHBOR))
             .add(Rot90Op(numRotation))
-            .add(NormalizeOp(0.0f, 255.0f))
+            .add(NormalizeOp(127.5f, 127.5f))
             .build()
 
         return imageProcessor.process(inputImage)
@@ -148,10 +147,28 @@ class Classifier(private var context: Context, private val modelName: String) {
 
     private fun convertBitmapToARGB8888(bitmap: Bitmap) = bitmap.copy(Bitmap.Config.ARGB_8888, true)
 
-    private fun argmax(map: Map<String, Float>) =
-        map.entries.maxByOrNull { it.value }?.let {
-            it.key to it.value
-        } ?: "" to 0f
+    private fun processOutput(outputBuffer: TensorBuffer): List<Box> {
+        val detections = mutableListOf<Box>()
+        val detectionThreshold = 0.5f  // Adjust threshold as needed
+        val outputArray = outputBuffer.floatArray
+
+        // Assuming the output format is [batch_size, num_detections, 4 + num_classes]
+        val numDetections = outputArray.size / (4 + 1)  // Adjust according to model output format
+
+        for (i in 0 until numDetections) {
+            val startIdx = i * (4 + 1)
+            val score = outputArray[startIdx + 4]
+            if (score > detectionThreshold) {
+                val left = outputArray[startIdx]
+                val top = outputArray[startIdx + 1]
+                val right = outputArray[startIdx + 2]
+                val bottom = outputArray[startIdx + 3]
+                detections.add(Box(left, top, right, bottom, score))
+            }
+        }
+
+        return detections
+    }
 
     fun finish() {
         if (::model.isInitialized) model.close()
@@ -163,7 +180,9 @@ class Classifier(private var context: Context, private val modelName: String) {
     fun getModelInputSize(): Size = if (isInitialized.not()) Size(0, 0) else Size(modelInputWidth, modelInputHeight)
 
     companion object {
-        const val IMAGENET_CLASSIFY_MODEL = "mobilenet_imagenet_model.tflite"
-        const val LABEL_FILE = "labels.txt"
+        const val IMAGENET_CLASSIFY_MODEL = "ssd_mobilenet_v1_metadata.tflite"
+        const val LABEL_FILE = "ssd_mobilenet_labels.txt"
     }
 }
+
+data class Box(val left: Float, val top: Float, val right: Float, val bottom: Float, val score: Float)

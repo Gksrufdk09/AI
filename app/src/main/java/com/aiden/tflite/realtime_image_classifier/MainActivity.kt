@@ -77,7 +77,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun initClassifier() {
-        classifier = Classifier(this, Classifier.IMAGENET_CLASSIFY_MODEL)
+        classifier = Classifier(this, "ssd_mobilenet_v1_metadata.tflite")
         try {
             classifier.init()
         } catch (exception: IOException) {
@@ -172,25 +172,29 @@ class MainActivity : AppCompatActivity() {
 
         YuvToRgbConverter.yuvToRgb(this, image, rgbFrameBitmap!!)
 
+        // Resize the bitmap to 416x416
+        val resizedBitmap = Bitmap.createScaledBitmap(rgbFrameBitmap!!, 416, 416, true)
+
         handler?.post {
             if (::classifier.isInitialized && classifier.isInitialized()) {
                 val startTime = SystemClock.uptimeMillis()
-                val output = classifier.classify(rgbFrameBitmap!!, sensorOrientation)
+                val output = classifier.classify(resizedBitmap, sensorOrientation)
                 val elapsedTime = SystemClock.uptimeMillis() - startTime
                 runOnUiThread {
-                    binding.textResult.text =
-                        String.format(
-                            Locale.ENGLISH,
-                            "class : %s\nprob : %.2f%%\ntime : %dms",
-                            output.first,
-                            output.second * 100,
-                            elapsedTime
-                        )
+                    val maxOutputSize = 5
+                    val resultText = output.take(maxOutputSize).joinToString("\n") { box ->
+                        "Box: (${box.left}, ${box.top}, ${box.right}, ${box.bottom})"
+                    }
+                    binding.textResult.text = String.format(
+                        Locale.ENGLISH,
+                        "Detected objects:\n%s\ntime: %dms",
+                        resultText,
+                        elapsedTime
+                    )
                 }
             }
             image.close()
             isProcessingFrame = false
         }
     }
-
 }
